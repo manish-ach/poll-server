@@ -78,45 +78,51 @@ attempt() {
   oci "${args[@]}" 2>&1
 }
 
-# ----- loop over every availability domain and fault domain ----------------
+# ----- loop over availability domains (ONE auto-fault-domain attempt each) --
+# We deliberately do NOT iterate fault domains. OCI rate-limits launch_instance
+# (HTTP 429 "Too many requests") if you fire several launches back-to-back, so
+# hammering FD-1/2/3 in one run just gets you throttled. One attempt per run +
+# the 5-minute cron is what reliably catches a free slot. In single-AD Mumbai
+# this is a single launch call per run.
 mapfile -t ADS < <(oci iam availability-domain list --compartment-id "$OCI_CLI_TENANCY" | jq -r '.data[].name')
 echo "Availability domains: ${ADS[*]}"
 
 for ad in "${ADS[@]}"; do
-  mapfile -t FDS < <(oci iam fault-domain list --availability-domain "$ad" --compartment-id "$COMPARTMENT_ID" | jq -r '.data[].name')
-  # "" = let Oracle pick the fault domain (often the best shot), then try each explicitly
-  for fd in "" "${FDS[@]}"; do
-    echo "── Attempt: AD=$ad FD=${fd:-<auto>} shape=$SHAPE ${OCPUS}ocpu/${MEM_GB}GB"
-    set +e
-    out="$(attempt "$ad" "$fd")"
-    rc=$?
-    set -e
+  echo "── Attempt: AD=$ad FD=<auto> shape=$SHAPE ${OCPUS}ocpu/${MEM_GB}GB"
+  set +e
+  out="$(attempt "$ad" "")"
+  rc=$?
+  set -e
 
-    if [[ $rc -eq 0 ]]; then
-      iid="$(echo "$out" | jq -r '.data.id' 2>/dev/null || true)"
-      ip="$(oci compute instance list-vnics --instance-id "$iid" --query 'data[0]."public-ip"' --raw-output 2>/dev/null || true)"
-      # This repo is PUBLIC → Actions logs and the run summary are world-readable.
-      # Keep the IP/OCID OUT of the log and summary; ship them only via step outputs,
-      # which the (private) Discord step consumes. Outputs are not printed to the log.
-      echo "🎉 SUCCESS — A1 instance is RUNNING (IP/OCID sent to Discord; also in the OCI console)."
-      emit "created=true"
-      emit "instance_id=$iid"
-      emit "public_ip=$ip"
-      summary "## 🎉 Got your A1 instance!"
-      summary "It's **RUNNING** in AD-1. The public IP was sent to your Discord webhook and is in the OCI console."
-      summary "_(IP and OCID are intentionally omitted here — this repo's Actions logs are public.)_"
-      exit 0
-    fi
+  if [[ $rc -eq 0 ]]; then
+    iid="$(echo "$out" | jq -r '.data.id' 2>/dev/null || true)"
+    ip="$(oci compute instance list-vnics --instance-id "$iid" --query 'data[0]."public-ip"' --raw-output 2>/dev/null || true)"
+    # This repo is PUBLIC → Actions logs and the run summary are world-readable.
+    # Keep the IP/OCID OUT of the log and summary; ship them only via step outputs,
+    # which the (private) Discord step consumes. Outputs are not printed to the log.
+    echo "🎉 SUCCESS — A1 instance is RUNNING (IP/OCID sent to Discord; also in the OCI console)."
+    emit "created=true"
+    emit "instance_id=$iid"
+    emit "public_ip=$ip"
+    summary "## 🎉 Got your A1 instance!"
+    summary "It's **RUNNING** in AD-1. The public IP was sent to your Discord webhook and is in the OCI console."
+    summary "_(IP and OCID are intentionally omitted here — this repo's Actions logs are public.)_"
+    exit 0
+  fi
 
-    echo "$out"
-    if echo "$out" | grep -qiE "out of (host )?capacity|capacity"; then
-      echo "⏳ Out of capacity at $ad/${fd:-<auto>} — trying next."
-      continue
-    fi
-    # Anything else (bad auth, quota LimitExceeded, bad OCID) is a real error to fix.
-    echo "❌ Non-capacity error — fix this before the next run (see message above)."
-    exit 1
-  done
+  echo "$out"
+  if echo "$out" | grep -qiE "out of (host )?capacity"; then
+    echo "⏳ Out of capacity in $ad — will retry on the next cron run."
+    continue
+  fi
+  if echo "$out" | grep -qiE "TooManyRequests|too many requests|\"status\":[[:space:]]*429"; then
+    echo "🐢 Rate-limited by OCI (429) — backing off; the next cron run will retry."
+    emit "created=false"
+    exit 0
+  fi
+  # Anything else (bad auth, quota LimitExceeded, bad OCID) is a real error to fix.
+  echo "❌ Non-capacity error — fix this before the next run (see message above)."
+  exit 1
 done
 
 echo "😴 No capacity anywhere this round. The cron will try again shortly."

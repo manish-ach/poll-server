@@ -52,17 +52,15 @@ jobs:
         if: steps.launch.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          IID: ${{ steps.launch.outputs.instance_id }}
-          IP: ${{ steps.launch.outputs.public_ip }}
         run: |
+          # This repo is public, so this issue is world-readable — keep it generic.
+          # The actual IP/OCID go only to Discord (private) and the OCI console.
           gh issue create \
-            --title "🎉 A1 instance created — $IP" \
+            --title "🎉 A1 instance created" \
             --body "Your free A1 instance is RUNNING.
 
-          - OCID: \`$IID\`
-          - Public IP: \`$IP\`
-
-          SSH: \`ssh ubuntu@$IP\` (use \`opc\` for Oracle Linux images).
+          The public IP was sent to your Discord webhook and is in the OCI console.
+          (IP/OCID are intentionally omitted here because this repo is public.)
 
           You can now **disable this workflow** (Actions → this workflow → ⋯ → Disable workflow)."
 

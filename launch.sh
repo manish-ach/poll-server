@@ -95,19 +95,16 @@ for ad in "${ADS[@]}"; do
     if [[ $rc -eq 0 ]]; then
       iid="$(echo "$out" | jq -r '.data.id' 2>/dev/null || true)"
       ip="$(oci compute instance list-vnics --instance-id "$iid" --query 'data[0]."public-ip"' --raw-output 2>/dev/null || true)"
-      echo "🎉 SUCCESS — instance is RUNNING"
-      echo "   id: $iid"
-      echo "   public ip: ${ip:-<none>}"
+      # This repo is PUBLIC → Actions logs and the run summary are world-readable.
+      # Keep the IP/OCID OUT of the log and summary; ship them only via step outputs,
+      # which the (private) Discord step consumes. Outputs are not printed to the log.
+      echo "🎉 SUCCESS — A1 instance is RUNNING (IP/OCID sent to Discord; also in the OCI console)."
       emit "created=true"
       emit "instance_id=$iid"
       emit "public_ip=$ip"
       summary "## 🎉 Got your A1 instance!"
-      summary "- **Name:** $DISPLAY_NAME"
-      summary "- **OCID:** \`$iid\`"
-      summary "- **Public IP:** \`${ip:-<none>}\`"
-      summary "- **AD / FD:** $ad / ${fd:-<auto>}"
-      summary ""
-      summary "SSH in: \`ssh ubuntu@${ip}\`  (user is \`opc\` for Oracle Linux images)"
+      summary "It's **RUNNING** in AD-1. The public IP was sent to your Discord webhook and is in the OCI console."
+      summary "_(IP and OCID are intentionally omitted here — this repo's Actions logs are public.)_"
       exit 0
     fi
 

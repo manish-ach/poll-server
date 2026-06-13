@@ -1,0 +1,16 @@
+# NEVER commit credentials. The OCI API private key and SSH private keys must
+# stay out of git — they go into GitHub *secrets*, never into the repo.
+*.pem
+*.key
+*_key
+id_rsa*
+id_ed25519*
+oci_api_key*
+.oci/
+config
+oci_config
+
+# Local env files
+.env
+.env.*
+*.local

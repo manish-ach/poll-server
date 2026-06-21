@@ -1,80 +1,80 @@
 name: Grab OCI A1 free instance
 
 on:
-  workflow_dispatch: {}          # manual "Run workflow" button — use this to test
-  schedule:
-    - cron: "*/5 * * * *"        # every 5 min (GitHub's minimum); delays are normal
+    workflow_dispatch: {} # manual "Run workflow" button — use this to test
+    schedule:
+        - cron: "*/5 * * * *" # every 5 min (GitHub's minimum); delays are normal
 
 concurrency:
-  group: oci-a1-grab             # never run two attempts at once
-  cancel-in-progress: false
+    group: oci-a1-grab # never run two attempts at once
+    cancel-in-progress: false
 
 permissions:
-  contents: read
-  issues: write                  # so we can open a "you got it!" issue on success
+    contents: read
+    issues: write # so we can open a "you got it!" issue on success
 
 jobs:
-  launch:
-    runs-on: ubuntu-latest
-    env:
-      # --- auth (set these as repo secrets) ---
-      OCI_CLI_USER:        ${{ secrets.OCI_CLI_USER }}
-      OCI_CLI_TENANCY:     ${{ secrets.OCI_CLI_TENANCY }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-      OCI_CLI_REGION:      ${{ secrets.OCI_CLI_REGION }}
-      OCI_CLI_AUTH: api_key
-      # --- where/what to launch ---
-      OCI_COMPARTMENT_ID:  ${{ secrets.OCI_COMPARTMENT_ID }}   # optional; defaults to tenancy
-      OCI_SUBNET_ID:       ${{ secrets.OCI_SUBNET_ID }}
-      SSH_PUBLIC_KEY:      ${{ secrets.SSH_PUBLIC_KEY }}
-      OCI_IMAGE_ID:        ${{ secrets.OCI_IMAGE_ID }}         # optional; auto-resolved if unset
-      DISCORD_WEBHOOK:     ${{ secrets.DISCORD_WEBHOOK }}       # optional; pings on success
-      # --- shape knobs (override via repo Variables if you like) ---
-      OCI_OCPUS:        ${{ vars.OCI_OCPUS || '1' }}
-      OCI_MEMORY_GB:    ${{ vars.OCI_MEMORY_GB || '6' }}
-      OCI_DISPLAY_NAME: ${{ vars.OCI_DISPLAY_NAME || 'free-a1' }}
-      OCI_BOOT_VOLUME_GB: ${{ vars.OCI_BOOT_VOLUME_GB || '100' }}
-      OCI_OS:           ${{ vars.OCI_OS || 'Canonical Ubuntu' }}
-      OCI_OS_VERSION:   ${{ vars.OCI_OS_VERSION || '24.04' }}
-      OCI_IMAGE_NAME_FILTER: ${{ vars.OCI_IMAGE_NAME_FILTER || 'Minimal' }}  # picks Ubuntu 24.04 Minimal aarch64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install OCI CLI
-        run: pip install --quiet --upgrade oci-cli
-
-      - name: Attempt launch
-        id: launch
-        run: bash ./launch.sh
-
-      - name: Open an issue on success
-        if: steps.launch.outputs.created == 'true'
+    launch:
+        runs-on: ubuntu-latest
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # This repo is public, so this issue is world-readable — keep it generic.
-          # The actual IP/OCID go only to Discord (private) and the OCI console.
-          gh issue create \
-            --title "🎉 A1 instance created" \
-            --body "Your free A1 instance is RUNNING.
+            # --- auth (set these as repo secrets) ---
+            OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+            OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+            OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+            OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+            OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+            OCI_CLI_AUTH: api_key
+            # --- where/what to launch ---
+            OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }} # optional; defaults to tenancy
+            OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+            SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+            OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }} # optional; auto-resolved if unset
+            DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }} # optional; pings on success
+            # --- shape knobs (override via repo Variables if you like) ---
+            OCI_OCPUS: ${{ vars.OCI_OCPUS || '1' }}
+            OCI_MEMORY_GB: ${{ vars.OCI_MEMORY_GB || '6' }}
+            OCI_DISPLAY_NAME: ${{ vars.OCI_DISPLAY_NAME || 'nxtcloud-m' }}
+            OCI_BOOT_VOLUME_GB: ${{ vars.OCI_BOOT_VOLUME_GB || '100' }}
+            OCI_OS: ${{ vars.OCI_OS || 'Canonical Ubuntu' }}
+            OCI_OS_VERSION: ${{ vars.OCI_OS_VERSION || '24.04' }}
+            OCI_IMAGE_NAME_FILTER: ${{ vars.OCI_IMAGE_NAME_FILTER || 'Minimal' }} # picks Ubuntu 24.04 Minimal aarch64
+        steps:
+            - uses: actions/checkout@v4
 
-          The public IP was sent to your Discord webhook and is in the OCI console.
-          (IP/OCID are intentionally omitted here because this repo is public.)
+            - name: Install OCI CLI
+              run: pip install --quiet --upgrade oci-cli
 
-          You can now **disable this workflow** (Actions → this workflow → ⋯ → Disable workflow)."
+            - name: Attempt launch
+              id: launch
+              run: bash ./launch.sh
 
-      - name: Ping Discord on success
-        if: steps.launch.outputs.created == 'true' && env.DISCORD_WEBHOOK != ''
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          IID: ${{ steps.launch.outputs.instance_id }}
-          IP: ${{ steps.launch.outputs.public_ip }}
-        run: |
-          content="🎉 **OCI A1 instance is live!**
-          **Public IP:** \`$IP\`
-          **OCID:** \`$IID\`
-          SSH: \`ssh ubuntu@$IP\`  (user \`opc\` on Oracle Linux)
-          Remember to disable the retry workflow."
-          jq -n --arg c "$content" '{content: $c}' \
-            | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
+            - name: Open an issue on success
+              if: steps.launch.outputs.created == 'true'
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  # This repo is public, so this issue is world-readable — keep it generic.
+                  # The actual IP/OCID go only to Discord (private) and the OCI console.
+                  gh issue create \
+                    --title "🎉 A2 instance created" \
+                    --body "Your VPS instance is RUNNING.
+
+                  The public IP was sent to your Discord webhook and is in the OCI console.
+                  (IP/OCID are intentionally omitted here because this repo is public.)
+
+                  You can now **disable this workflow** (Actions → this workflow → ⋯ → Disable workflow)."
+
+            - name: Ping Discord on success
+              if: steps.launch.outputs.created == 'true' && env.DISCORD_WEBHOOK != ''
+              env:
+                  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+                  IID: ${{ steps.launch.outputs.instance_id }}
+                  IP: ${{ steps.launch.outputs.public_ip }}
+              run: |
+                  content="🎉 **OCI A1 instance is live!**
+                  **Public IP:** \`$IP\`
+                  **OCID:** \`$IID\`
+                  SSH: \`ssh ubuntu@$IP\`  (user \`opc\` on Oracle Linux)
+                  Remember to disable the retry workflow."
+                  jq -n --arg c "$content" '{content: $c}' \
+                    | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"

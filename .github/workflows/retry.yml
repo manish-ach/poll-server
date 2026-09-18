@@ -3,7 +3,11 @@ name: Grab OCI A1 free instance
 on:
     workflow_dispatch: {} # manual "Run workflow" button — use this to test
     schedule:
-        - cron: "*/5 * * * *" # every 5 min (GitHub's minimum); delays are normal
+        # Every 5 min, offset by 2 (:02, :07, :12 ...). The :00/:05 slots are the
+        # most congested on GitHub and get delayed or skipped; an odd offset fires
+        # more reliably. Changing this line also forces GitHub to re-register the
+        # schedule after the workflow has been disabled/re-enabled.
+        - cron: "2-59/5 * * * *"
 
 concurrency:
     group: oci-a1-grab # never run two attempts at once

@@ -4,13 +4,18 @@ Auto-grab a free-tier **VM.Standard.A1.Flex** (Ampere ARM) instance on Oracle Cl
 when capacity in your home region is chronically *"Out of capacity"*.
 
 A GitHub Actions cron fires every ~5 minutes and tries to launch the instance.
-The moment OCI has a free slot, it grabs it and opens a GitHub issue with the
-public IP. No server, no cost — it runs on GitHub's free runners and OCI launch
-attempts are free API calls.
+The moment OCI has a free slot, it grabs it, opens a GitHub issue and (optionally)
+pings a Discord webhook with the public IP. No server, no cost — it runs on GitHub's
+free runners and OCI launch attempts are free API calls.
 
-Tuned for **single-AD regions like Mumbai (`ap-mumbai-1`)**: it requests a small
-**1 OCPU / 6 GB** slice (far easier to place — you can scale up to 4/24 later) and
-tries every fault domain, including letting Oracle auto-pick one.
+**What it creates:** an instance named **`mnsh1`** — **2 OCPU / 12 GB RAM**, a
+**200 GB boot volume**, running **Ubuntu 24.04 (ARM / aarch64)**. That is half of the
+free CPU/RAM allowance (4 OCPU / 24 GB) and all of the free 200 GB block-storage
+allowance. You can scale CPU/RAM up to 4/24 later from the console.
+
+Tuned for **single-AD regions like Mumbai (`ap-mumbai-1`)**: one launch attempt per
+run (Oracle auto-picks the fault domain) so OCI doesn't rate-limit us, and the cron
+simply tries again five minutes later.
 
 ---
 
@@ -81,21 +86,26 @@ Repo → **Actions** → enable workflows if prompted → **Grab OCI A1 free ins
 - A red non-capacity error → fix that secret/value (the message says what's wrong).
 
 After a successful manual run, the 5-minute cron takes over automatically. When it
-lands the instance you'll get a **new GitHub issue** (GitHub emails you) with the IP.
+lands the instance you'll get a **new GitHub issue** (GitHub emails you). The public IP
+goes to your Discord webhook (if set) and is always visible in the OCI console under
+**Compute → Instances → mnsh1**.
 
 ---
 
 ## After you get it
-- The script is idempotent: once `free-a1` exists, every later run is a no-op, so
+- The script is idempotent: once `mnsh1` exists, every later run is a no-op, so
   **no duplicates** are created. Still, go to **Actions → this workflow → ⋯ → Disable
   workflow** to stop the cron.
 - SSH in: `ssh -i ~/.ssh/oci ubuntu@<public-ip>` (user is `opc` for Oracle Linux images).
-- Want the full free allowance? Edit the instance later to **4 OCPU / 24 GB**, or set
-  repo Variables `OCI_OCPUS` / `OCI_MEMORY_GB` before it launches. Free A1 limit is
-  4 OCPU + 24 GB total across all your A1 VMs.
+- The instance launches as **2 OCPU / 12 GB / 200 GB boot** (`mnsh1`). Want the full
+  CPU/RAM allowance? Edit the instance later to **4 OCPU / 24 GB**, or set repo
+  Variables `OCI_OCPUS` / `OCI_MEMORY_GB` before it launches. Free A1 limit is
+  4 OCPU + 24 GB total across all your A1 VMs. Free block storage is **200 GB total**
+  (boot volumes included), and the 200 GB boot volume already uses all of it — don't
+  attach extra volumes or a second A1 VM's boot disk would be billable.
 
 ## Which image you get
-By default the script grabs the newest **Canonical Ubuntu 24.04 Minimal aarch64**
+By default the script grabs the newest **Canonical Ubuntu 24.04 Minimal aarch64 (ARM)**
 image — it filters the A1 image list (which is already ARM-only) by the display-name
 regex in `OCI_IMAGE_NAME_FILTER` (default `Minimal`). To get the *standard* (non-Minimal)
 build instead, set that Variable to empty. To use a different release, set `OCI_OS_VERSION`
@@ -114,8 +124,8 @@ picker) and copy its OCID.
 
 ## Tuning (optional repo Variables)
 Settings → Secrets and variables → Actions → **Variables**:
-`OCI_OCPUS` (1), `OCI_MEMORY_GB` (6), `OCI_DISPLAY_NAME` (free-a1),
-`OCI_BOOT_VOLUME_GB` (100), `OCI_OS` (Canonical Ubuntu), `OCI_OS_VERSION` (24.04),
+`OCI_OCPUS` (2), `OCI_MEMORY_GB` (12), `OCI_DISPLAY_NAME` (mnsh1),
+`OCI_BOOT_VOLUME_GB` (200), `OCI_OS` (Canonical Ubuntu), `OCI_OS_VERSION` (24.04),
 `OCI_IMAGE_NAME_FILTER` (Minimal).
 
 ## Notes & gotchas

@@ -12,10 +12,10 @@ set -euo pipefail
 COMPARTMENT_ID="${OCI_COMPARTMENT_ID:-$OCI_CLI_TENANCY}"   # default: root compartment
 SUBNET_ID="${OCI_SUBNET_ID:?set OCI_SUBNET_ID}"
 SHAPE="${OCI_SHAPE:-VM.Standard.A1.Flex}"
-OCPUS="${OCI_OCPUS:-1}"                                    # small slice = easier to place
-MEM_GB="${OCI_MEMORY_GB:-6}"
-DISPLAY_NAME="${OCI_DISPLAY_NAME:-nxtcloud-m}"
-BOOT_GB="${OCI_BOOT_VOLUME_GB:-100}"
+OCPUS="${OCI_OCPUS:-2}"                                    # half the free 4-OCPU allowance
+MEM_GB="${OCI_MEMORY_GB:-12}"
+DISPLAY_NAME="${OCI_DISPLAY_NAME:-mnsh1}"
+BOOT_GB="${OCI_BOOT_VOLUME_GB:-200}"                       # = the full free block-storage allowance
 OS_NAME="${OCI_OS:-Canonical Ubuntu}"
 OS_VERSION="${OCI_OS_VERSION:-24.04}"
 

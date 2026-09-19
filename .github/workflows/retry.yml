@@ -16,6 +16,7 @@ concurrency:
 permissions:
     contents: read
     issues: write # so we can open a "you got it!" issue on success
+    actions: write # so a run can dispatch the next attempt (see last step)
 
 jobs:
     launch:
@@ -82,3 +83,34 @@ jobs:
                   Remember to disable the retry workflow."
                   jq -n --arg c "$content" '{content: $c}' \
                     | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
+
+            - name: Queue the next attempt (self-chain)
+              # GitHub skips most slots of a 5-min cron in a quiet repo (we saw
+              # ~2 h gaps), so each run dispatches the next one itself. Only after a
+              # SOFT miss (capacity / 429): a hard error (bad secret, quota) ends the
+              # chain so it can't loop on a broken config, and the cron above is a
+              # sparse backstop that restarts it. Disabling the workflow in the
+              # Actions tab stops the chain (the dispatch is refused).
+              if: >-
+                  steps.launch.outcome == 'success' &&
+                  steps.launch.outputs.created != 'true' &&
+                  steps.launch.outputs.exists != 'true'
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  GH_REPO: ${{ github.repository }}
+                  DELAY: ${{ vars.OCI_RETRY_DELAY_SECONDS || '120' }} # gap before the next attempt
+              run: |
+                  echo "Waiting ${DELAY}s before queuing the next attempt..."
+                  sleep "$DELAY"
+                  # If another run is already queued/running (e.g. the cron fired
+                  # meanwhile), let it carry the chain instead of starting a second one.
+                  others="$(gh run list --workflow retry.yml --limit 20 --json databaseId,status \
+                    --jq "[.[] | select(.databaseId != ${GITHUB_RUN_ID})
+                               | select(.status | IN(\"queued\",\"in_progress\",\"pending\",\"waiting\",\"requested\"))] | length")"
+                  if [[ "${others:-0}" -gt 0 ]]; then
+                    echo "Another run is already queued — it will continue the chain."
+                    exit 0
+                  fi
+                  gh workflow run retry.yml --ref "$GITHUB_REF_NAME" \
+                    && echo "Next attempt queued." \
+                    || echo "::warning::Could not queue the next run (workflow disabled?). Chain ends here; the cron remains as a backstop."

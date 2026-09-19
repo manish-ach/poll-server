@@ -34,6 +34,7 @@ existing="$(oci compute instance list --compartment-id "$COMPARTMENT_ID" --all 2
 if [[ "${existing:-0}" -gt 0 ]]; then
   echo "✅ An instance named '$DISPLAY_NAME' already exists — nothing to do."
   emit "created=false"
+  emit "exists=true"   # tells the workflow not to queue another attempt
   exit 0
 fi
 

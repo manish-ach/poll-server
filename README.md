@@ -3,7 +3,9 @@
 Auto-grab a free-tier **VM.Standard.A1.Flex** (Ampere ARM) instance on Oracle Cloud
 when capacity in your home region is chronically *"Out of capacity"*.
 
-A GitHub Actions cron fires every ~5 minutes and tries to launch the instance.
+A GitHub Actions run tries to launch the instance, then queues the next attempt
+itself ~5 minutes later (a plain cron gets throttled to hourly-ish gaps; the cron
+is kept only as a backstop that restarts the chain).
 The moment OCI has a free slot, it grabs it, opens a GitHub issue and (optionally)
 pings a Discord webhook with the public IP. No server, no cost — it runs on GitHub's
 free runners and OCI launch attempts are free API calls.
@@ -85,7 +87,8 @@ Repo → **Actions** → enable workflows if prompted → **Grab OCI A1 free ins
 - `Out of capacity ... trying next` → auth works, just waiting for a slot. 
 - A red non-capacity error → fix that secret/value (the message says what's wrong).
 
-After a successful manual run, the 5-minute cron takes over automatically. When it
+After that first run, each run queues the next one ~5 minutes later, so the loop
+keeps going on its own (the cron only restarts it if the chain ever dies). When it
 lands the instance you'll get a **new GitHub issue** (GitHub emails you). The public IP
 goes to your Discord webhook (if set) and is always visible in the OCI console under
 **Compute → Instances → mnsh1**.
@@ -94,8 +97,9 @@ goes to your Discord webhook (if set) and is always visible in the OCI console u
 
 ## After you get it
 - The script is idempotent: once `mnsh1` exists, every later run is a no-op, so
-  **no duplicates** are created. Still, go to **Actions → this workflow → ⋯ → Disable
-  workflow** to stop the cron.
+  **no duplicates** are created, and a run that finds the instance stops queuing
+  more. Still, go to **Actions → this workflow → ⋯ → Disable workflow** to stop
+  the chain and the cron for good.
 - SSH in: `ssh -i ~/.ssh/oci ubuntu@<public-ip>` (user is `opc` for Oracle Linux images).
 - The instance launches as **2 OCPU / 12 GB / 200 GB boot** (`mnsh1`). Want the full
   CPU/RAM allowance? Edit the instance later to **4 OCPU / 24 GB**, or set repo
@@ -131,8 +135,17 @@ Settings → Secrets and variables → Actions → **Variables**:
 ## Notes & gotchas
 - GitHub **disables scheduled workflows after 60 days** with no repo commits — push
   something occasionally, or re-enable from the Actions tab.
-- Cron runs can be **delayed during peak load**; that's fine for catching capacity.
-- **Security:** anyone with these secrets controls your tenancy. Keep the repo private.
+- GitHub **throttles frequent crons** heavily (we measured ~2 h between runs of a
+  `*/5` schedule). That is why each run dispatches the next one; the cron is a backstop.
+- **Minutes:** a private repo gets 2 000 free Actions minutes/month. Each attempt holds
+  the runner ~2.5 min (OCI waits before answering "out of capacity"), so a 5-minute
+  loop burns that in ~3 days and Actions then stops. Public repos get unlimited
+  minutes, which is why this repo is public. Logs never print the IP or OCID, and
+  secrets are never exposed by a public repo. To slow the loop instead, set repo
+  Variable `OCI_RETRY_DELAY_SECONDS` (default 120, the pause before the next attempt).
+- **Security:** anyone with these secrets controls your tenancy. Secrets are never
+  readable from the repo, public or not, but never commit the `.pem` or paste OCIDs
+  into logs.
   For least privilege, create a dedicated IAM user + group + a policy that only allows
   `manage instance-family` / `use` on networking in your compartment, and use that
   user's API key here.

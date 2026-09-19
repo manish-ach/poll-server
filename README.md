@@ -109,19 +109,21 @@ goes to your Discord webhook (if set) and is always visible in the OCI console u
   attach extra volumes or a second A1 VM's boot disk would be billable.
 
 ## Which image you get
-By default the script grabs the newest **Canonical Ubuntu 24.04 Minimal aarch64 (ARM)**
-image — it filters the A1 image list (which is already ARM-only) by the display-name
-regex in `OCI_IMAGE_NAME_FILTER` (default `Minimal`). To get the *standard* (non-Minimal)
-build instead, set that Variable to empty. To use a different release, set `OCI_OS_VERSION`
-(e.g. `22.04`). SSH user for Ubuntu images is `ubuntu`.
+By default the script grabs the newest **standard Canonical Ubuntu 24.04 aarch64 (ARM)**
+image: it lists the A1 images (already ARM-only), keeps those whose OS version starts
+with `OCI_OS_VERSION`, and prefers the exact version match (OCI labels the Minimal
+build's version as `24.04 Minimal`, so it is skipped unless asked for). To get the
+*Minimal* build instead, set the Variable `OCI_IMAGE_NAME_FILTER` to `Minimal` (a regex
+on the display name). To use a different release, set `OCI_OS_VERSION` (e.g. `22.04`).
+SSH user for Ubuntu images is `ubuntu`.
 
 **Want to pin one exact image?** Set the `OCI_IMAGE_ID` secret to a specific OCID — this
 overrides the lookup entirely. Get the OCID with the CLI:
 ```bash
 oci compute image list --compartment-id <tenancy-ocid> \
-  --operating-system "Canonical Ubuntu" --operating-system-version "24.04" \
-  --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC \
-  | jq -r '.data[] | select(."display-name" | test("Minimal")) | "\(.["display-name"])  \(.id)"'
+  --operating-system "Canonical Ubuntu" --shape VM.Standard.A1.Flex --all \
+  --sort-by TIMECREATED --sort-order DESC \
+  | jq -r '.data[] | "\(."operating-system-version")\t\(."display-name")\t\(.id)"'
 ```
 or open the image on the OCI console's **Compute → Images** (or the instance-create image
 picker) and copy its OCID.
@@ -130,7 +132,7 @@ picker) and copy its OCID.
 Settings → Secrets and variables → Actions → **Variables**:
 `OCI_OCPUS` (2), `OCI_MEMORY_GB` (12), `OCI_DISPLAY_NAME` (mnsh1),
 `OCI_BOOT_VOLUME_GB` (200), `OCI_OS` (Canonical Ubuntu), `OCI_OS_VERSION` (24.04),
-`OCI_IMAGE_NAME_FILTER` (Minimal).
+`OCI_IMAGE_NAME_FILTER` (empty = standard build; `Minimal` for the Minimal build).
 
 ## Notes & gotchas
 - GitHub **disables scheduled workflows after 60 days** with no repo commits — push

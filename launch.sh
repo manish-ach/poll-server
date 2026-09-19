@@ -43,11 +43,11 @@ if [[ -n "${OCI_IMAGE_ID:-}" ]]; then
   IMAGE_ID="$OCI_IMAGE_ID"
 else
   # OCI labels Ubuntu *Minimal* images with a different OS-version string
-  # ("24.04 Minimal" vs "24.04"), so an exact --operating-system-version filter
-  # silently drops them and the "Minimal" name filter then matches nothing.
-  # Fetch every image for the OS + shape (--shape already limits to aarch64) and
-  # match the version by prefix instead. The optional OCI_IMAGE_NAME_FILTER (a
-  # regex on the display name, e.g. "Minimal") then picks the variant.
+  # ("24.04 Minimal" vs "24.04"). Fetch every image for the OS + shape (--shape
+  # already limits to aarch64), keep those whose version starts with OS_VERSION,
+  # and prefer an EXACT version match — so "24.04" picks the newest *standard*
+  # build even when a Minimal build is newer. To get Minimal instead, set the
+  # optional OCI_IMAGE_NAME_FILTER (a regex on the display name) to "Minimal".
   echo "Looking up latest $OS_NAME $OS_VERSION image for $SHAPE (filter='${OCI_IMAGE_NAME_FILTER:-none}')..."
   images="$(oci compute image list \
     --compartment-id "$COMPARTMENT_ID" \
@@ -57,7 +57,9 @@ else
   IMAGE_ID="$(echo "$images" | jq -r --arg v "$OS_VERSION" --arg f "${OCI_IMAGE_NAME_FILTER:-}" \
     '[(.data // [])[]
       | select((."operating-system-version" // "" | tostring) | startswith($v))
-      | select($f=="" or (."display-name" | test($f)))][0].id // empty')"
+      | select($f=="" or (."display-name" | test($f)))]
+     | (map(select(."operating-system-version" == $v)) + .)   # exact version first
+     | .[0].id // empty')"
   if [[ -z "$IMAGE_ID" || "$IMAGE_ID" == "null" ]]; then
     echo "❌ No image matched version prefix '$OS_VERSION' + name filter '${OCI_IMAGE_NAME_FILTER:-}'."
     echo "   Images OCI offers for '$OS_NAME' on $SHAPE (os-version <TAB> display-name):"

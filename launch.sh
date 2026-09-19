@@ -41,20 +41,30 @@ fi
 if [[ -n "${OCI_IMAGE_ID:-}" ]]; then
   IMAGE_ID="$OCI_IMAGE_ID"
 else
-  # The --shape filter already restricts results to aarch64 images. The optional
-  # OCI_IMAGE_NAME_FILTER (a regex on the display name, e.g. "Minimal") picks the
-  # right variant — A1.Flex returns both standard and Minimal Ubuntu builds.
+  # OCI labels Ubuntu *Minimal* images with a different OS-version string
+  # ("24.04 Minimal" vs "24.04"), so an exact --operating-system-version filter
+  # silently drops them and the "Minimal" name filter then matches nothing.
+  # Fetch every image for the OS + shape (--shape already limits to aarch64) and
+  # match the version by prefix instead. The optional OCI_IMAGE_NAME_FILTER (a
+  # regex on the display name, e.g. "Minimal") then picks the variant.
   echo "Looking up latest $OS_NAME $OS_VERSION image for $SHAPE (filter='${OCI_IMAGE_NAME_FILTER:-none}')..."
-  IMAGE_ID="$(oci compute image list \
+  images="$(oci compute image list \
     --compartment-id "$COMPARTMENT_ID" \
     --operating-system "$OS_NAME" \
-    --operating-system-version "$OS_VERSION" \
     --shape "$SHAPE" \
-    --sort-by TIMECREATED --sort-order DESC \
-    | jq -r --arg f "${OCI_IMAGE_NAME_FILTER:-}" \
-        '[(.data // [])[] | select($f=="" or (."display-name" | test($f)))][0].id // empty')"
+    --sort-by TIMECREATED --sort-order DESC --all)"
+  IMAGE_ID="$(echo "$images" | jq -r --arg v "$OS_VERSION" --arg f "${OCI_IMAGE_NAME_FILTER:-}" \
+    '[(.data // [])[]
+      | select((."operating-system-version" // "" | tostring) | startswith($v))
+      | select($f=="" or (."display-name" | test($f)))][0].id // empty')"
+  if [[ -z "$IMAGE_ID" || "$IMAGE_ID" == "null" ]]; then
+    echo "❌ No image matched version prefix '$OS_VERSION' + name filter '${OCI_IMAGE_NAME_FILTER:-}'."
+    echo "   Images OCI offers for '$OS_NAME' on $SHAPE (os-version <TAB> display-name):"
+    echo "$images" | jq -r '(.data // [])[] | "   \(."operating-system-version")\t\(."display-name")"' | head -20
+    echo "   → Set repo Variable OCI_OS_VERSION / OCI_IMAGE_NAME_FILTER to match one, or pin secret OCI_IMAGE_ID."
+    exit 1
+  fi
 fi
-[[ -n "$IMAGE_ID" && "$IMAGE_ID" != "null" ]] || { echo "❌ Could not resolve an image OCID."; exit 1; }
 echo "Image: $IMAGE_ID"
 
 # ----- one launch attempt --------------------------------------------------
